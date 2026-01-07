@@ -33,11 +33,20 @@ To run this project, you will need to add the following environment variables to
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ALLDEBRID_API_KEY` | Your Alldebrid API key. Get it from [your API keys page](https://alldebrid.com/apikeys/). **Required.** | - |
+| `PROVIDER` | Choose backend: `alldebrid` or `torbox`. | `alldebrid` |
+| `ALLDEBRID_API_KEY` | Your Alldebrid API key. Required if PROVIDER is `alldebrid`. | - |
+| `TORBOX_API_KEY` | Your TorBox API key. Required if PROVIDER is `torbox`. | - |
 | `AUTH_USERNAME` | The login username for Tinfoil authentication. | `admin` |
 | `AUTH_PASSWORD` | The login password for Tinfoil authentication. | `adminadmin` |
 | `PORT` | The port that the server will run on. | `8000` |
 | `SWITCH_UID` | Lock the server to a specific Switch UID. Leave blank to allow any Switch. | - |
+
+## Features (v1.1.0)
+- **Multi-Provider Support:** Switch between Alldebrid and Torbox easily.
+- **Partial Content Support (`Range` Headers):** Fixes Tinfoil freezing and validation errors.
+- **Smart Redirects (307):** Preserves headers during 302/307 redirects for maximum compatibility.
+- **VPS Block Detection:** Automatically detects and alerts if your VPS IP is blocked by the provider.
+- **URL Unquoting:** Fixes "Failed to open NSP" errors caused by double-encoded links.
 
 ## Connection Details
 

@@ -18,9 +18,11 @@ import logging
 from functions.tinfoilFunctions import generateIndex, serveFile
 from library.version import VERSION
 
+import os
 app = FastAPI()
+PROVIDER = os.getenv("PROVIDER", "alldebrid").upper()
 logging.basicConfig(level=logging.INFO)
-logging.info(f"Starting Alldebrid Tinfoil Server v{VERSION}")
+logging.info(f"Starting Tinfoil Server v{VERSION} (Provider: {PROVIDER})")
 
 
 # Custom exemption handler to be well-formatted with Tinfoil so the user knows what has happened if no authentication is sent, as it is required.
