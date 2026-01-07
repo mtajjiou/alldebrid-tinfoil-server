@@ -104,6 +104,7 @@ async def serveFile(
                 error_code="DATABASE_ERROR",
             ),
         )
+        
 
     # now stream link and stream out
     # Reverting to Proxy mode because Tinfoil fails to follow 302 Redirects for valid NSP metadata parsing.
