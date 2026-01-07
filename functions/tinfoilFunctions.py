@@ -13,7 +13,6 @@ from urllib.parse import unquote
 import time
 
 PROVIDER = os.getenv("PROVIDER", "alldebrid").lower()
-USE_PROXY = os.getenv("USE_PROXY", "false").lower() == "true"
 
 ACCEPTABLE_SWITCH_FILES = [".nsp", ".nsz", ".xci", ".xcz"]
 
@@ -85,7 +84,7 @@ async def serveFile(
     background_task: BackgroundTasks,
     download_type: str,
     download_id: str,
-    file_id: int = 0,
+    file_id: str = "0",
 ):
     """
     Retrieves the Alldebrid download link and starts proxying the download through the server. This is necessary as generating a bunch of links through the index generation process can take some time, and is wasteful.
@@ -112,6 +111,11 @@ async def serveFile(
 
         # Unquote the link because the provider might provide it encoded, and RedirectResponse re-encodes it.
         final_link = unquote(download_link)
+        
+        # Determine Proxy Mode
+        # We check env var here to ensure it's loaded correctly at runtime
+        USE_PROXY = os.getenv("USE_PROXY", "false").lower() == "true"
+        logging.info(f"Config: USE_PROXY={USE_PROXY}")
         
         # PROXY MODE (For VPS users on Torbox, or local users who want speed logs)
         if USE_PROXY:
