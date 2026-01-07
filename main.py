@@ -50,12 +50,14 @@ async def get_user_files(
 
 @app.get("/{download_type}/{download_id}/{file_id}")
 async def get_file(
+    request: Request,
     background_task: BackgroundTasks,  # background_task is used to clean up the httpx response afterwards to prevent leakage
     download_type: str,
     download_id: str,
     file_id: int = 0,
 ):
     return await serveFile(
+        request=request,
         background_task=background_task,
         download_type=download_type,
         download_id=download_id,
@@ -64,4 +66,4 @@ async def get_file(
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    uvicorn.run(app, host="0.0.0.0", port=int(PORT))

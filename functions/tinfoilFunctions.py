@@ -2,7 +2,7 @@ import asyncio
 from functions.alldebridFunctions import getDownloads, getDownloadLink
 import logging
 from library.tinfoil import errorMessage
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 import fnmatch
 import human_readable
@@ -64,6 +64,7 @@ async def generateIndex(base_url: str):
 
 
 async def serveFile(
+    request: Request,
     background_task: BackgroundTasks,
     download_type: str,
     download_id: str,
@@ -104,10 +105,33 @@ async def serveFile(
         )
 
     # now stream link and stream out
+    # now stream link and stream out
     client = httpx.AsyncClient()
-    request = client.build_request(method="GET", url=download_link, timeout=90)
-    response = await client.send(request, stream=True)
+    
+    # Forward Range header if present
+    req_headers = {}
+    if "range" in request.headers:
+        req_headers["Range"] = request.headers["range"]
+
+    req_upstream = client.build_request(method="GET", url=download_link, headers=req_headers, timeout=90)
+    response = await client.send(req_upstream, stream=True)
 
     cleanup = background_task.add_task(response.aclose)
+    
+    # Prepare response headers
+    res_headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Type": response.headers.get("Content-Type", "application/octet-stream"),
+    }
+    
+    # Forward critical headers
+    for header in ["Content-Length", "Content-Range", "Content-Disposition"]:
+        if header in response.headers:
+            res_headers[header] = response.headers[header]
 
-    return StreamingResponse(content=response.aiter_bytes(), background=cleanup)
+    return StreamingResponse(
+        content=response.aiter_bytes(), 
+        status_code=response.status_code,
+        headers=res_headers,
+        background=cleanup
+    )

@@ -29,7 +29,7 @@ async def getReadyMagnets() -> list:
             return []
 
         json_response = response.json()
-        logging.info(f"Alldebrid magnet/status response: {json_response}")
+        # logging.info(f"Alldebrid magnet/status response: {json_response}")
         
         if json_response.get("status") != "success":
             error = json_response.get("error", {})
@@ -42,7 +42,7 @@ async def getReadyMagnets() -> list:
         magnets = data.get("magnets", {})
         
         # Log what we received
-        logging.info(f"Retrieved {len(magnets)} ready magnets from Alldebrid")
+        # logging.info(f"Retrieved {len(magnets)} ready magnets from Alldebrid")
         
         # Handle case where magnets is a dict (with string keys like "0", "1", etc.)
         if isinstance(magnets, dict):
