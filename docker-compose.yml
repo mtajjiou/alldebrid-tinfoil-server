@@ -1,0 +1,12 @@
+name: alldebrid-tinfoil-server
+services:
+  alldebrid-tinfoil-server:
+    build: .
+    ports:
+      - 8000:8000
+    environment:
+      - ALLDEBRID_API_KEY=${ALLDEBRID_API_KEY}
+      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-adminadmin}
+      - PORT=8000
+    restart: unless-stopped
