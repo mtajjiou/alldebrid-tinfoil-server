@@ -144,7 +144,7 @@ async def serveFile(
                 "Content-Disposition": f'attachment; filename="{final_link.split("/")[-1]}"',
             }
             # Remove None headers
-            res_headers = {k: v for k: v in res_headers.items() if v is not None}
+            res_headers = {k: v for k, v in res_headers.items() if v is not None}
 
             async def speed_iterator(iterator):
                 start_time = time.time()
