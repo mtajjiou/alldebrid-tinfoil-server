@@ -6,6 +6,7 @@ from fastapi import BackgroundTasks, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 import fnmatch
 import human_readable
+import httpx
 
 ACCEPTABLE_SWITCH_FILES = [".nsp", ".nsz", ".xci", ".xcz"]
 
@@ -119,6 +120,26 @@ async def serveFile(
     # Unquote the link because Alldebrid provides it encoded, and RedirectResponse re-encodes it.
     final_link = unquote(download_link)
     
+    # Check if VPS is blocked (Pre-flight check)
+    try:
+        async with httpx.AsyncClient() as client:
+            # Use a generic User-Agent to test connectivity
+            headers = {"User-Agent": "Mozilla/5.0 (Nintendo Switch; WifiWebAuthApplet) AppleWebKit/606.4 (KHTML, like Gecko) NF/6.0.1.00.5 NintendoBrowser/5.1.0.20393"}
+            check = await client.head(final_link, headers=headers, follow_redirects=True, timeout=3.0)
+            
+            if check.status_code == 503:
+                logging.error("ALERTE: VPS EST BLOQUÉ PAR ALLDEBRID (503 Service Unavailable).")
+                logging.error("Votre adresse IP VPS est sur liste noire. Le téléchargement échouera probablement.")
+                logging.error("Consultez le site web d'Alldebrid pour plus d'infos sur les IPs serveurs.")
+            elif check.status_code == 403:
+                logging.error("ALERTE: LIEN INTERDIT (403 Forbidden).")
+                logging.error("Possible verrouillage IP (IP Locking). Le lien généré par le VPS ne peut pas être lu ailleurs.")
+            elif check.status_code != 200 and check.status_code != 206:
+                logging.warning(f"Attention: Alldebrid a retourné le code {check.status_code} lors du test de connexion.")
+                
+    except Exception as e:
+        logging.warning(f"Impossible de vérifier le statut du lien Alldebrid: {e}")
+
     # Use 307 Temporary Redirect to force Tinfoil to preserve the 'Range' header.
     # A standard 302 might cause Tinfoil to drop headers and request the full file (failing the open).
     return RedirectResponse(url=final_link, status_code=307)
