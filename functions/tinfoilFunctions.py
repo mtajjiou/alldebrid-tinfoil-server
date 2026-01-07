@@ -158,7 +158,7 @@ async def serveFile(
             raise e
 
     return StreamingResponse(
-        content=speed_iterator(response.aiter_bytes(chunk_size=512 * 1024)), # 512KB chunks
+        content=speed_iterator(response.aiter_bytes(chunk_size=1024 * 1024 * 4)), # 4MB chunks
         status_code=response.status_code,
         headers=res_headers,
         background=cleanup
