@@ -1,4 +1,5 @@
 import asyncio
+import time
 from functions.alldebridFunctions import getDownloads, getDownloadLink
 import logging
 from library.tinfoil import errorMessage
@@ -132,8 +133,32 @@ async def serveFile(
         if header in response.headers:
             res_headers[header] = response.headers[header]
 
+    # Wrapper to log speed
+    async def speed_iterator(iterator):
+        start_time = time.time()
+        last_log_time = start_time
+        bytes_since_last_log = 0
+        
+        try:
+            async for chunk in iterator:
+                yield chunk
+                bytes_since_last_log += len(chunk)
+                current_time = time.time()
+                
+                # Log usage every 5 seconds
+                if current_time - last_log_time >= 5:
+                    interval = current_time - last_log_time
+                    speed = (bytes_since_last_log / 1024 / 1024) / interval
+                    logging.info(f"Serving file... Speed: {speed:.2f} MB/s")
+                    
+                    last_log_time = current_time
+                    bytes_since_last_log = 0
+        except Exception as e:
+            logging.error(f"Stream error: {e}")
+            raise e
+
     return StreamingResponse(
-        content=response.aiter_bytes(chunk_size=512 * 1024), # 512KB chunks
+        content=speed_iterator(response.aiter_bytes(chunk_size=512 * 1024)), # 512KB chunks
         status_code=response.status_code,
         headers=res_headers,
         background=cleanup
