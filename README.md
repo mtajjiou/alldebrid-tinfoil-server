@@ -42,8 +42,8 @@ To run this project, you will need to add the following environment variables to
 | `SWITCH_UID` | Lock the server to a specific Switch UID. Leave blank to allow any Switch. | - |
 
 ## Features (v1.1.0)
-- **Multi-Provider Support:** Switch between Alldebrid and Torbox easily.
-- **Partial Content Support (`Range` Headers):** Fixes Tinfoil freezing and validation errors.
+- **Multi-Provider Support:** Switch between Alldebrid and Torbox easily. Torbox support has been fully restored and integrated.
+- **Partial Content Support (`Range` Headers):** Fixes Tinfoil freezing and validation errors. This optimization is now applied to **both** Alldebrid and Torbox connections.
 - **Smart Redirects (307):** Preserves headers during 302/307 redirects for maximum compatibility.
 - **VPS Block Detection:** Automatically detects and alerts if your VPS IP is blocked by the provider.
 - **URL Unquoting:** Fixes "Failed to open NSP" errors caused by double-encoded links.
