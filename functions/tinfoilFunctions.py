@@ -105,8 +105,36 @@ async def serveFile(
         )
 
     # now stream link and stream out
-    # Redirect the Switch to download directly from Alldebrid
-    # This is faster and reduces load on the server.
-    # It works perfectly since the Switch and Server usually share the same Public IP.
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url=download_link, status_code=302)
+    # Reverting to Proxy mode because Tinfoil fails to follow 302 Redirects for valid NSP metadata parsing.
+    # Optimization: Using larger chunk size (512KB) to improve throughput and prevent 0.0MB/s stalls.
+    
+    client = httpx.AsyncClient()
+    
+    # Forward Range header if present
+    req_headers = {}
+    if "range" in request.headers:
+        req_headers["Range"] = request.headers["range"]
+
+    # Use a longer timeout for the download stream
+    req_upstream = client.build_request(method="GET", url=download_link, headers=req_headers, timeout=None)
+    response = await client.send(req_upstream, stream=True)
+
+    cleanup = background_task.add_task(response.aclose)
+    
+    # Prepare response headers
+    res_headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Type": response.headers.get("Content-Type", "application/octet-stream"),
+    }
+    
+    # Forward critical headers
+    for header in ["Content-Length", "Content-Range", "Content-Disposition"]:
+        if header in response.headers:
+            res_headers[header] = response.headers[header]
+
+    return StreamingResponse(
+        content=response.aiter_bytes(chunk_size=512 * 1024), # 512KB chunks
+        status_code=response.status_code,
+        headers=res_headers,
+        background=cleanup
+    )
