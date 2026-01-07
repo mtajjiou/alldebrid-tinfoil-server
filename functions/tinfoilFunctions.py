@@ -112,7 +112,9 @@ async def serveFile(
     client = httpx.AsyncClient()
     
     # Forward Range header if present
-    req_headers = {}
+    req_headers = {
+        "User-Agent": "Mozilla/5.0 (Nintendo Switch; WifiWebAuthApplet) AppleWebKit/606.4 (KHTML, like Gecko) NF/6.0.1.00.5 NintendoBrowser/5.1.0.20393",
+    }
     if "range" in request.headers:
         req_headers["Range"] = request.headers["range"]
 
