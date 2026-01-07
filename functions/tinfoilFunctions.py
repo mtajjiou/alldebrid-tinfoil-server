@@ -1,13 +1,11 @@
 import asyncio
-import time
 from functions.alldebridFunctions import getDownloads, getDownloadLink
 import logging
 from library.tinfoil import errorMessage
 from fastapi import BackgroundTasks, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 import fnmatch
 import human_readable
-import httpx
 
 ACCEPTABLE_SWITCH_FILES = [".nsp", ".nsz", ".xci", ".xcz"]
 
@@ -107,62 +105,8 @@ async def serveFile(
         
 
     # now stream link and stream out
-    # Reverting to Proxy mode because Tinfoil fails to follow 302 Redirects for valid NSP metadata parsing.
-    # Optimization: Using larger chunk size (512KB) to improve throughput and prevent 0.0MB/s stalls.
-    
-    client = httpx.AsyncClient()
-    
-    # Forward Range header if present
-    req_headers = {
-        "User-Agent": "Mozilla/5.0 (Nintendo Switch; WifiWebAuthApplet) AppleWebKit/606.4 (KHTML, like Gecko) NF/6.0.1.00.5 NintendoBrowser/5.1.0.20393",
-    }
-    if "range" in request.headers:
-        req_headers["Range"] = request.headers["range"]
-
-    # Use a longer timeout for the download stream
-    req_upstream = client.build_request(method="GET", url=download_link, headers=req_headers, timeout=None)
-    response = await client.send(req_upstream, stream=True)
-
-    cleanup = background_task.add_task(response.aclose)
-    
-    # Prepare response headers
-    res_headers = {
-        "Accept-Ranges": "bytes",
-        "Content-Type": response.headers.get("Content-Type", "application/octet-stream"),
-    }
-    
-    # Forward critical headers
-    for header in ["Content-Length", "Content-Range", "Content-Disposition"]:
-        if header in response.headers:
-            res_headers[header] = response.headers[header]
-
-    # Wrapper to log speed
-    async def speed_iterator(iterator):
-        start_time = time.time()
-        last_log_time = start_time
-        bytes_since_last_log = 0
-        
-        try:
-            async for chunk in iterator:
-                yield chunk
-                bytes_since_last_log += len(chunk)
-                current_time = time.time()
-                
-                # Log usage every 5 seconds
-                if current_time - last_log_time >= 5:
-                    interval = current_time - last_log_time
-                    speed = (bytes_since_last_log / 1024 / 1024) / interval
-                    logging.info(f"Serving file... Speed: {speed:.2f} MB/s")
-                    
-                    last_log_time = current_time
-                    bytes_since_last_log = 0
-        except Exception as e:
-            logging.error(f"Stream error: {e}")
-            raise e
-
-    return StreamingResponse(
-        content=speed_iterator(response.aiter_bytes(chunk_size=1024 * 1024 * 4)), # 4MB chunks
-        status_code=response.status_code,
-        headers=res_headers,
-        background=cleanup
-    )
+    # Redirect the Switch to download directly from Alldebrid.
+    # We MUST use redirects because Alldebrid blocks Datacenter IPs (VPS/Coolify) with 503 errors.
+    # The Switch (Home IP) will connect directly to Alldebrid, bypassing the block.
+    # This also solves the speed issue.
+    return RedirectResponse(url=download_link, status_code=302)
