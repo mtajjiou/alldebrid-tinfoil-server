@@ -33,6 +33,7 @@ To run this project, you will need to add the following environment variables to
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `USE_PROXY` | Set to `true` to stream downloads through the server (Fixes Torbox on VPS). Default: `false`. | `false` |
 | `PROVIDER` | Choose backend: `alldebrid` or `torbox`. | `alldebrid` |
 | `ALLDEBRID_API_KEY` | Your Alldebrid API key. Required if PROVIDER is `alldebrid`. | - |
 | `TORBOX_API_KEY` | Your TorBox API key. Required if PROVIDER is `torbox`. | - |
@@ -43,6 +44,7 @@ To run this project, you will need to add the following environment variables to
 
 ## Features (v1.1.0)
 - **Multi-Provider Support:** Switch between Alldebrid and Torbox easily. Torbox support has been fully restored and integrated.
+- **Proxy Mode (Optional):** Enable `USE_PROXY=true` to stream files through the server. **Required for Torbox on VPS** to bypass IP locking.
 - **Partial Content Support (`Range` Headers):** Fixes Tinfoil freezing and validation errors. This optimization is now applied to **both** Alldebrid and Torbox connections.
 - **Smart Redirects (307):** Preserves headers during 302/307 redirects for maximum compatibility.
 - **VPS Block Detection:** Automatically detects and alerts if your VPS IP is blocked by the provider.

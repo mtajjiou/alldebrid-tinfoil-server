@@ -5,13 +5,15 @@ from functions.torboxFunctions import getDownloads as getTorboxDownloads, getDow
 import logging
 from library.tinfoil import errorMessage
 from fastapi import BackgroundTasks, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 import fnmatch
 import human_readable
 import httpx
 from urllib.parse import unquote
+import time
 
 PROVIDER = os.getenv("PROVIDER", "alldebrid").lower()
+USE_PROXY = os.getenv("USE_PROXY", "false").lower() == "true"
 
 ACCEPTABLE_SWITCH_FILES = [".nsp", ".nsz", ".xci", ".xcz"]
 
@@ -37,11 +39,11 @@ async def generateIndex(base_url: str):
     - dict: the generated index for Tinfoil to use.
     """
 
-    success_message = "Welcome to your self-hosted Alldebrid Tinfoil Server! You are now able to directly download your files from Alldebrid to your switch.\n\n"
+    success_message = "Welcome to your self-hosted Alldebrid/Torbox Tinfoil Server! You are now able to directly download your files to your switch.\n\n"
     files = []
 
     try:
-        # Get all downloads from Alldebrid magnets
+        # Get all downloads from provider
         file_list = await getDownloads()
 
         for file in file_list:
@@ -111,20 +113,79 @@ async def serveFile(
         # Unquote the link because the provider might provide it encoded, and RedirectResponse re-encodes it.
         final_link = unquote(download_link)
         
+        # PROXY MODE (For VPS users on Torbox, or local users who want speed logs)
+        if USE_PROXY:
+            logging.info("Proxy Mode Enabled. Streaming file through server...")
+            client = httpx.AsyncClient()
+            
+            req_headers = {
+                "User-Agent": request.headers.get("user-agent", "Mozilla/5.0"),
+                "Range": request.headers.get("range"),
+            }
+            # Remove None headers
+            req_headers = {k: v for k, v in req_headers.items() if v is not None}
+
+            req_upstream = client.build_request("GET", final_link, headers=req_headers, timeout=None)
+            response = await client.send(req_upstream, stream=True)
+            
+            # Check for errors from provider
+            if response.status_code >= 400:
+                logging.error(f"Provider returned error: {response.status_code}")
+                await response.aclose()
+                return errorMessage(f"Provider Error: {response.status_code}")
+
+            cleanup = background_task.add_task(response.aclose)
+            
+            res_headers = {
+                "Accept-Ranges": "bytes",
+                "Content-Type": response.headers.get("Content-Type", "application/octet-stream"),
+                "Content-Length": response.headers.get("Content-Length"),
+                "Content-Range": response.headers.get("Content-Range"),
+                "Content-Disposition": f'attachment; filename="{final_link.split("/")[-1]}"',
+            }
+            # Remove None headers
+            res_headers = {k: v for k: v in res_headers.items() if v is not None}
+
+            async def speed_iterator(iterator):
+                start_time = time.time()
+                last_log_time = start_time
+                bytes_since_last_log = 0
+                try:
+                    async for chunk in iterator:
+                        yield chunk
+                        bytes_since_last_log += len(chunk)
+                        current_time = time.time()
+                        if current_time - last_log_time >= 5:
+                            interval = current_time - last_log_time
+                            speed = (bytes_since_last_log / 1024 / 1024) / interval
+                            logging.info(f"Serving speed: {speed:.2f} MB/s")
+                            last_log_time = current_time
+                            bytes_since_last_log = 0
+                except Exception as e:
+                    logging.error(f"Stream error: {e}")
+                    raise e
+
+            return StreamingResponse(
+                content=speed_iterator(response.aiter_bytes(chunk_size=1024 * 1024 * 4)),
+                status_code=response.status_code,
+                headers=res_headers,
+                background=cleanup
+            )
+
+
+        # REDIRECT MODE (Default for Alldebrid/Local)
         # Check if VPS is blocked (Pre-flight check)
         try:
             async with httpx.AsyncClient() as client:
-                # Use a generic User-Agent to test connectivity
-                headers = {"User-Agent": "Mozilla/5.0 (Nintendo Switch; WifiWebAuthApplet) AppleWebKit/606.4 (KHTML, like Gecko) NF/6.0.1.00.5 NintendoBrowser/5.1.0.20393"}
+                headers = {"User-Agent": "Mozilla/5.0 (Nintendo Switch; WifiWebAuthApplet)"}
                 check = await client.head(final_link, headers=headers, follow_redirects=True, timeout=3.0)
                 
                 if check.status_code == 503:
                     logging.error(f"ALERT: VPS IS BLOCKED BY {PROVIDER.upper()} (503 Service Unavailable).")
-                    logging.error("Your VPS IP address is blacklisted. Download will likely fail.")
-                    logging.error(f"Check {PROVIDER} website for more info on Server IPs.")
+                    logging.error("Your VPS IP address is blacklisted. USE_PROXY=true might help for Torbox, but not Alldebrid.")
                 elif check.status_code == 403:
                     logging.error("ALERT: LINK FORBIDDEN (403 Forbidden).")
-                    logging.error("Possible IP Locking. The link generated by the VPS cannot be read elsewhere.")
+                    logging.error("Possible IP Locking. Try enabling USE_PROXY=true (if Provider allows VPS).")
                 elif check.status_code != 200 and check.status_code != 206:
                     logging.warning(f"Warning: {PROVIDER} returned code {check.status_code} during connectivity check.")
                     
