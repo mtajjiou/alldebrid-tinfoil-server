@@ -3,10 +3,9 @@ from functions.alldebridFunctions import getDownloads, getDownloadLink
 import logging
 from library.tinfoil import errorMessage
 from fastapi import BackgroundTasks, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 import fnmatch
 import human_readable
-import httpx
 
 ACCEPTABLE_SWITCH_FILES = [".nsp", ".nsz", ".xci", ".xcz"]
 
@@ -106,69 +105,18 @@ async def serveFile(
         
 
     # now stream link and stream out
-    # Proxy Mode with User-Agent Spoofing
-    # We proxy the file to fix "Failed to open NSP" (Tinfoil compatibility).
-    # We spoof the User-Agent to try and bypass Alldebrid's Datacenter/Bot block (503).
+    # Redirect Mode with Double-Encoding Fix
+    # VPS (Coolify) is blocked by Alldebrid (503), so we MUST use Redirects.
+    # We unquote the URL to prevent FastAPI from double-encoding it (e.g. %20 -> %2520), which breaks the link.
     
-    import httpx
-    import time
-    client = httpx.AsyncClient()
+    # Log Debug Info
+    logging.info(f"ServeFile: Redirecting to {download_link}")
+    logging.info(f"Request Headers: {request.headers}")
     
-    # Headers to look like a Switch
-    req_headers = {
-        "User-Agent": "Mozilla/5.0 (Nintendo Switch; WifiWebAuthApplet) AppleWebKit/606.4 (KHTML, like Gecko) NF/6.0.1.00.5 NintendoBrowser/5.1.0.20393",
-        "Accept": "*/*",
-        "Accept-Encoding": "identity",
-    }
+    from urllib.parse import unquote
+    from fastapi.responses import RedirectResponse
     
-    # Forward Range header if present
-    if "range" in request.headers:
-        req_headers["Range"] = request.headers["range"]
-
-    # Use a longer timeout for the download stream
-    req_upstream = client.build_request(method="GET", url=download_link, headers=req_headers, timeout=None)
-    response = await client.send(req_upstream, stream=True)
-
-    cleanup = background_task.add_task(response.aclose)
+    # Unquote the link because Alldebrid provides it encoded, and RedirectResponse re-encodes it.
+    final_link = unquote(download_link)
     
-    # Prepare response headers
-    res_headers = {
-        "Accept-Ranges": "bytes",
-        "Content-Type": response.headers.get("Content-Type", "application/octet-stream"),
-    }
-    
-    # Forward critical headers
-    for header in ["Content-Length", "Content-Range", "Content-Disposition"]:
-        if header in response.headers:
-            res_headers[header] = response.headers[header]
-
-    # Wrapper to log speed
-    async def speed_iterator(iterator):
-        start_time = time.time()
-        last_log_time = start_time
-        bytes_since_last_log = 0
-        
-        try:
-            async for chunk in iterator:
-                yield chunk
-                bytes_since_last_log += len(chunk)
-                current_time = time.time()
-                
-                # Log usage every 5 seconds
-                if current_time - last_log_time >= 5:
-                    interval = current_time - last_log_time
-                    speed = (bytes_since_last_log / 1024 / 1024) / interval
-                    logging.info(f"Serving file... Speed: {speed:.2f} MB/s")
-                    
-                    last_log_time = current_time
-                    bytes_since_last_log = 0
-        except Exception as e:
-            logging.error(f"Stream error: {e}")
-            raise e
-
-    return StreamingResponse(
-        content=speed_iterator(response.aiter_bytes(chunk_size=1024 * 1024 * 4)), # 4MB chunks
-        status_code=response.status_code,
-        headers=res_headers,
-        background=cleanup
-    )
+    return RedirectResponse(url=final_link, status_code=302)
