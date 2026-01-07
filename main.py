@@ -50,7 +50,7 @@ async def get_user_files(
     return await generateIndex(base_url=request.base_url)
 
 
-@app.get("/{download_type}/{download_id}/{file_id}")
+@app.api_route("/{download_type}/{download_id}/{file_id}", methods=["GET", "HEAD"])
 async def get_file(
     request: Request,
     background_task: BackgroundTasks,  # background_task is used to clean up the httpx response afterwards to prevent leakage

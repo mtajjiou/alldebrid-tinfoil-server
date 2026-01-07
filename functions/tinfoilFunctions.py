@@ -2,10 +2,11 @@ import asyncio
 from functions.alldebridFunctions import getDownloads, getDownloadLink
 import logging
 from library.tinfoil import errorMessage
-from fastapi import BackgroundTasks, Request
+from fastapi import BackgroundTasks, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 import fnmatch
 import human_readable
+import httpx
 
 ACCEPTABLE_SWITCH_FILES = [".nsp", ".nsz", ".xci", ".xcz"]
 
@@ -105,8 +106,39 @@ async def serveFile(
         
 
     # now stream link and stream out
-    # Redirect the Switch to download directly from Alldebrid.
-    # We MUST use redirects because Alldebrid blocks Datacenter IPs (VPS/Coolify) with 503 errors.
-    # The Switch (Home IP) will connect directly to Alldebrid, bypassing the block.
-    # This also solves the speed issue.
+    # Combined Strategy for VPS Compatibility:
+    # 1. HEAD Requests: Proxy them. Tinfoil checks metadata/size first. 
+    #    We hope Alldebrid doesn't block HEAD requests from VPS (low bandwidth).
+    # 2. GET Requests: Redirect them. Actuall download happens directly (bypassing 503 block).
+    
+    if request.method == "HEAD":
+        client = httpx.AsyncClient()
+        # Use simple headers for HEAD
+        req_headers = {
+            "User-Agent": "Mozilla/5.0 (Nintendo Switch; WifiWebAuthApplet) AppleWebKit/606.4 (KHTML, like Gecko) NF/6.0.1.00.5 NintendoBrowser/5.1.0.20393",
+        }
+        try:
+             # Just get headers, don't download body
+            response = await client.head(download_link, headers=req_headers, timeout=10, follow_redirects=True)
+            
+            res_headers = {
+                "Accept-Ranges": "bytes",
+                "Content-Type": response.headers.get("Content-Type", "application/octet-stream"),
+            }
+            # Forward size
+            for header in ["Content-Length", "Content-Range", "Content-Disposition"]:
+                if header in response.headers:
+                    res_headers[header] = response.headers[header]
+            
+            await client.aclose()
+            # Return 200 OK with headers (empty body)
+            return Response(status_code=200, headers=res_headers)
+            
+        except Exception as e:
+            await client.aclose()
+            logging.error(f"HEAD proxy failed: {e}")
+            # Fallback to redirect if HEAD fails
+            return RedirectResponse(url=download_link, status_code=302)
+
+    # For GET requests (Download), use Redirect to bypass VPS blocking
     return RedirectResponse(url=download_link, status_code=302)
