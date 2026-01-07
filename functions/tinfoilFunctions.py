@@ -1,5 +1,7 @@
 import asyncio
-from functions.alldebridFunctions import getDownloads, getDownloadLink
+import os
+from functions.alldebridFunctions import getDownloads as getAlldebridDownloads, getDownloadLink as getAlldebridDownloadLink
+from functions.torboxFunctions import getDownloads as getTorboxDownloads, getDownloadLink as getTorboxDownloadLink
 import logging
 from library.tinfoil import errorMessage
 from fastapi import BackgroundTasks, Request, Response
@@ -7,8 +9,21 @@ from fastapi.responses import JSONResponse, RedirectResponse
 import fnmatch
 import human_readable
 import httpx
+from urllib.parse import unquote
+
+PROVIDER = os.getenv("PROVIDER", "alldebrid").lower()
 
 ACCEPTABLE_SWITCH_FILES = [".nsp", ".nsz", ".xci", ".xcz"]
+
+
+async def getDownloads():
+    if PROVIDER == "torbox":
+        torrents = await getTorboxDownloads("torrents")
+        usenet = await getTorboxDownloads("usenet")
+        webdl = await getTorboxDownloads("webdl")
+        return torrents + usenet + webdl
+    else:
+        return await getAlldebridDownloads()
 
 
 async def generateIndex(base_url: str):
