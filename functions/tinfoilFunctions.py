@@ -119,4 +119,6 @@ async def serveFile(
     # Unquote the link because Alldebrid provides it encoded, and RedirectResponse re-encodes it.
     final_link = unquote(download_link)
     
-    return RedirectResponse(url=final_link, status_code=302)
+    # Use 307 Temporary Redirect to force Tinfoil to preserve the 'Range' header.
+    # A standard 302 might cause Tinfoil to drop headers and request the full file (failing the open).
+    return RedirectResponse(url=final_link, status_code=307)
