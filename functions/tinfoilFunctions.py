@@ -3,7 +3,7 @@ from functions.alldebridFunctions import getDownloads, getDownloadLink
 import logging
 from library.tinfoil import errorMessage
 from fastapi import BackgroundTasks, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 import fnmatch
 import human_readable
 import httpx
@@ -106,39 +106,69 @@ async def serveFile(
         
 
     # now stream link and stream out
-    # Combined Strategy for VPS Compatibility:
-    # 1. HEAD Requests: Proxy them. Tinfoil checks metadata/size first. 
-    #    We hope Alldebrid doesn't block HEAD requests from VPS (low bandwidth).
-    # 2. GET Requests: Redirect them. Actuall download happens directly (bypassing 503 block).
+    # Proxy Mode with User-Agent Spoofing
+    # We proxy the file to fix "Failed to open NSP" (Tinfoil compatibility).
+    # We spoof the User-Agent to try and bypass Alldebrid's Datacenter/Bot block (503).
     
-    if request.method == "HEAD":
-        client = httpx.AsyncClient()
-        # Use simple headers for HEAD
-        req_headers = {
-            "User-Agent": "Mozilla/5.0 (Nintendo Switch; WifiWebAuthApplet) AppleWebKit/606.4 (KHTML, like Gecko) NF/6.0.1.00.5 NintendoBrowser/5.1.0.20393",
-        }
-        try:
-             # Just get headers, don't download body
-            response = await client.head(download_link, headers=req_headers, timeout=10, follow_redirects=True)
-            
-            res_headers = {
-                "Accept-Ranges": "bytes",
-                "Content-Type": response.headers.get("Content-Type", "application/octet-stream"),
-            }
-            # Forward size
-            for header in ["Content-Length", "Content-Range", "Content-Disposition"]:
-                if header in response.headers:
-                    res_headers[header] = response.headers[header]
-            
-            await client.aclose()
-            # Return 200 OK with headers (empty body)
-            return Response(status_code=200, headers=res_headers)
-            
-        except Exception as e:
-            await client.aclose()
-            logging.error(f"HEAD proxy failed: {e}")
-            # Fallback to redirect if HEAD fails
-            return RedirectResponse(url=download_link, status_code=302)
+    import httpx
+    import time
+    client = httpx.AsyncClient()
+    
+    # Headers to look like a Switch
+    req_headers = {
+        "User-Agent": "Mozilla/5.0 (Nintendo Switch; WifiWebAuthApplet) AppleWebKit/606.4 (KHTML, like Gecko) NF/6.0.1.00.5 NintendoBrowser/5.1.0.20393",
+        "Accept": "*/*",
+        "Accept-Encoding": "identity",
+    }
+    
+    # Forward Range header if present
+    if "range" in request.headers:
+        req_headers["Range"] = request.headers["range"]
 
-    # For GET requests (Download), use Redirect to bypass VPS blocking
-    return RedirectResponse(url=download_link, status_code=302)
+    # Use a longer timeout for the download stream
+    req_upstream = client.build_request(method="GET", url=download_link, headers=req_headers, timeout=None)
+    response = await client.send(req_upstream, stream=True)
+
+    cleanup = background_task.add_task(response.aclose)
+    
+    # Prepare response headers
+    res_headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Type": response.headers.get("Content-Type", "application/octet-stream"),
+    }
+    
+    # Forward critical headers
+    for header in ["Content-Length", "Content-Range", "Content-Disposition"]:
+        if header in response.headers:
+            res_headers[header] = response.headers[header]
+
+    # Wrapper to log speed
+    async def speed_iterator(iterator):
+        start_time = time.time()
+        last_log_time = start_time
+        bytes_since_last_log = 0
+        
+        try:
+            async for chunk in iterator:
+                yield chunk
+                bytes_since_last_log += len(chunk)
+                current_time = time.time()
+                
+                # Log usage every 5 seconds
+                if current_time - last_log_time >= 5:
+                    interval = current_time - last_log_time
+                    speed = (bytes_since_last_log / 1024 / 1024) / interval
+                    logging.info(f"Serving file... Speed: {speed:.2f} MB/s")
+                    
+                    last_log_time = current_time
+                    bytes_since_last_log = 0
+        except Exception as e:
+            logging.error(f"Stream error: {e}")
+            raise e
+
+    return StreamingResponse(
+        content=speed_iterator(response.aiter_bytes(chunk_size=1024 * 1024 * 4)), # 4MB chunks
+        status_code=response.status_code,
+        headers=res_headers,
+        background=cleanup
+    )
