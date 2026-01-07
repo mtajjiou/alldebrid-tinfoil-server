@@ -1,4 +1,4 @@
-# Alldebrid Tinfoil Server
+# Alldebrid/Torbox Tinfoil Server
 
 A self-hosted Tinfoil server that serves Nintendo Switch game files directly from your Alldebrid account.
 

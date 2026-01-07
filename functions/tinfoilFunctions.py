@@ -82,7 +82,6 @@ async def serveFile(
     - Streaming Response: containing the download of the file to be served on the fly.
     """
 
-    if download_type != "magnets":
     try:
         logging.info(f"Serving file: {download_type}/{download_id}/{file_id} via {PROVIDER}")
         
